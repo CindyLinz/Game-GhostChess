@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, TemplateHaskell, MultiParamTypeClasses, OverloadedStrings, NamedFieldPuns, TupleSections, MultiWayIf #-}
+{-# LANGUAGE TypeFamilies, TemplateHaskell, MultiParamTypeClasses, OverloadedStrings, NamedFieldPuns #-}
 module App where
 
 import qualified Network.WebSockets as WS
@@ -69,22 +69,26 @@ socketApp (GhostChessApp {appRoom}) addr pConn = do
   forever $ do
     cmd <- WS.receiveData conn >>= return . maybe CmdUnknown id . decode
     clientLog $ "got command: " ++ show cmd
-    case cmd of
-      CmdReady -> modifyMVar_ (roomGame appRoom) $ \game -> do
-        case playerReady side game of
-          Left msg -> clientLog ("error: " ++ T.unpack msg) >> return game
-          Right game' -> return game'
-      CmdMove r1 c1 r2 c2 -> modifyMVar_ (roomGame appRoom) $ \game -> do
-        case moveGhost side game (r1, c1) (r2, c2) of
-          Left msg -> clientLog ("error: " ++ T.unpack msg) >> return game
-          Right game' -> return (markMaybeFinalGame game')
-      CmdEscape -> modifyMVar_ (roomGame appRoom) $ \game -> do
-        case escapeGhost side game of
-          Left msg -> clientLog ("error: " ++ T.unpack msg) >> return game
-          Right game' -> return (markMaybeFinalGame game')
-      _ -> return ()
 
-    broadcastRoomState appRoom
+    let
+      playWith :: (Side -> Game -> Either Text Game) -> IO (Maybe Text)
+      playWith act = modifyMVar (roomGame appRoom) $ \game -> do
+        case act side game of
+          Left msg -> do
+            clientLog ("error: " ++ T.unpack msg)
+            return (game, Just msg)
+          Right game' -> do
+            return (markMaybeFinalGame game', Nothing)
+
+    mError <- case cmd of
+      CmdReady -> playWith playerReady
+      CmdMove r1 c1 r2 c2 -> playWith $ moveGhost (r1, c1) (r2, c2)
+      CmdEscape -> playWith escapeGhost
+      _ -> return (Just "怪指令")
+
+    case mError of
+      Just err -> sendRoomState conn side err appRoom
+      Nothing -> broadcastRoomState appRoom
 
     return ()
 

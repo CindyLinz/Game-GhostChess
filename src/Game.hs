@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE BangPatterns, OverloadedStrings, LambdaCase, FlexibleInstances, MultiWayIf #-}
 module Game where
 
 import Control.Monad
@@ -22,7 +22,7 @@ data Side
   | SideFinalB -- 遊戲結束, B贏
   deriving (Eq, Show)
 data GoodBad = Good | Bad deriving (Eq, Show)
-data Ghost = NoGhost | Ghost !Side !GoodBad deriving (Eq, Show)
+data Ghost = NoGhost | Ghost Side GoodBad deriving (Eq, Show)
 data GameResult = WinA | WinB | Tie
 
 data Game = Game
@@ -53,17 +53,22 @@ initGame = Game
     ]
   }
 
+isFinalSide :: Side -> Bool
+isFinalSide SideFinalA = True
+isFinalSide SideFinalB = True
+isFinalSide _ = False
+
 isFinalGame :: Game -> GameResult
 isFinalGame (Game { gameBoard=board, gameLost=lost }) =
   let
     rot = (flip .) . flip
 
-    (aAll, bAll) = rot foldl' (0, 0) (lost ++ join board) $ \(aAll, bAll) -> \case
+    (aAll, bAll) = rot foldl (0, 0) (lost ++ join board) $ \(aAll, bAll) -> \case
       NoGhost -> (aAll, bAll)
       Ghost SideA _ -> (aAll+1, bAll)
       Ghost SideB _ -> (aAll, bAll+1)
 
-    (aLostGood, aLostBad, bLostGood, bLostBad) = rot foldl' (0, 0, 0, 0) lost $ \(aGood, aBad, bGood, bBad) -> \case
+    (aLostGood, aLostBad, bLostGood, bLostBad) = rot foldl (0, 0, 0, 0) lost $ \(aGood, aBad, bGood, bBad) -> \case
       NoGhost -> (aGood, aBad, bGood, bBad)
       Ghost SideA Good -> (aGood+1, aBad, bGood, bBad)
       Ghost SideA Bad -> (aGood, aBad+1, bGood, bBad)
@@ -71,14 +76,11 @@ isFinalGame (Game { gameBoard=board, gameLost=lost }) =
       Ghost SideB Bad -> (aGood, aBad, bGood, bBad+1)
 
   in
-    if aLostGood==4 || bLostBad==4 || bAll<8
-    then WinB
-    else
-      if bLostGood==4 || aLostBad==4 || aAll<8
-      then WinA
-      else Tie
+    if | aLostGood==4 || bLostBad==4 || bAll<8 -> WinB
+       | bLostGood==4 || aLostBad==4 || aAll<8 -> WinA
+       | otherwise -> Tie
 
-(!<-) :: Int -> (a -> a) -> [a] -> [a]
+(!<-) :: Int -> (a -> a) -> ([a] -> [a])
 (!<-) i f = go i where
   go _ [] = []
   go 0 (a:as) = f a : as
@@ -103,40 +105,37 @@ playerReady side (game @ Game {gameCurr=curr}) = case curr of
   SideBeginB | side==SideB -> Right $ game {gameCurr = SideA}
   _ -> Left "不是輪到你"
 
-moveGhost :: Side -> Game -> (Int, Int) -> (Int, Int) -> Either Text Game
-moveGhost side (game @ Game {gameCurr=curr}) p1 p2 = case curr of
-  SideA | side==SideA -> goMove side game p1 p2
-  SideB | side==SideB -> goMove side game p1 p2
-  SideBegin | side==SideA || side==SideB -> goSwap side game p1 p2
-  SideBeginA | side==SideA -> goSwap side game p1 p2
-  SideBeginB | side==SideB -> goSwap side game p1 p2
-  _ -> Left "不是輪到你"
+moveGhost :: (Int, Int) -> (Int, Int) -> Side -> Game -> Either Text Game
+moveGhost (r0,c0) (r1,c1) side (game @ Game {gameCurr=curr, gameBoard=board, gameLost=lost}) = do
+  unless (posInRange r0 c0 && posInRange r1 c1) (throwError "位置坐標不正確")
+  case curr of
+    SideA | side==SideA -> goMove
+    SideB | side==SideB -> goMove
+    SideBegin | side==SideA || side==SideB -> goSwap
+    SideBeginA | side==SideA -> goSwap
+    SideBeginB | side==SideB -> goSwap
+    _ -> Left "不是輪到你"
   where
 
-  goSwap side (Game { gameBoard=board, gameCurr=curr, gameLost=lost }) (r0,c0) (r1,c1) = do
-    unless (posInRange r0 c0 && posInRange r1 c1) (throwError "位置坐標不正確")
+  ghost0 = board !! r0 !! c0
+  ghost1 = board !! r1 !! c1
 
-    let
-      ghost0 = board !! r0 !! c0
-      ghost1 = board !! r1 !! c1
-
+  goSwap = do
     forM_ [ghost0, ghost1] $ \case
       Ghost gside _ | gside==side -> return ()
       _ -> throwError "只能交換自己的幽靈"
 
     let
-      board' = r1 !<- c1 !<- const ghost0 $ r0 !<- c0 !<- const ghost1 $ board
+      board'
+        = r1 !<- c1 !<- const ghost0
+        $ r0 !<- c0 !<- const ghost1
+        $ board
 
     return $ Game { gameBoard=board', gameCurr=curr, gameLost=lost }
 
-  goMove side (Game { gameBoard=board, gameCurr=curr, gameLost=lost }) (r0,c0) (r1,c1) = do
-    unless (posInRange r0 c0 && posInRange r1 c1) (throwError "位置坐標不正確")
+  goMove = do
     unless ((r0==r1 && (c0==c1-1 || c0==c1+1)) || (c0==c1 && (r0==r1-1 || r0==r1+1)))
       (throwError "只能往臨格移動")
-
-    let
-      ghost0 = board !! r0 !! c0
-      ghost1 = board !! r1 !! c1
 
     case ghost0 of
       Ghost gside _ | gside==side -> return ()
@@ -155,37 +154,42 @@ moveGhost side (game @ Game {gameCurr=curr}) p1 p2 = case curr of
         SideA -> SideB
         SideB -> SideA
 
-      board' = r1 !<- c1 !<- const ghost0 $ r0 !<- c0 !<- const NoGhost $ board
+      board'
+        = r1 !<- c1 !<- const ghost0
+        $ r0 !<- c0 !<- const NoGhost
+        $ board
 
     return $ Game { gameBoard=board', gameCurr=curr', gameLost=lost' }
 
 escapeGhost :: Side -> Game -> Either Text Game
 escapeGhost side (game @ Game { gameBoard=board }) = case side of
-  SideA | Ghost SideA Good <- board !! 5 !! 0 -> return $ game { gameBoard = 5 !<- 0 !<- const NoGhost $ board }
-        | Ghost SideA Good <- board !! 5 !! 5 -> return $ game { gameBoard = 5 !<- 5 !<- const NoGhost $ board }
-  SideB | Ghost SideB Good <- board !! 0 !! 0 -> return $ game { gameBoard = 0 !<- 0 !<- const NoGhost $ board }
-        | Ghost SideB Good <- board !! 0 !! 5 -> return $ game { gameBoard = 0 !<- 5 !<- const NoGhost $ board }
+  SideA | Ghost SideA Good <- board !! 5 !! 0 -> dropGhost 5 0
+        | Ghost SideA Good <- board !! 5 !! 5 -> dropGhost 5 5
+  SideB | Ghost SideB Good <- board !! 0 !! 0 -> dropGhost 0 0
+        | Ghost SideB Good <- board !! 0 !! 5 -> dropGhost 0 5
   _ -> throwError "沒有可以脫離的幽靈"
+  where
+
+  dropGhost r c = return $ game { gameBoard = r !<- c !<- const NoGhost $ board }
 
 ghostName :: Side -> Ghost -> String
-ghostName side ghost =
-  case ghost of
-    NoGhost -> "."
-    Ghost gside ggood -> hd : tl where
-      hd = case gside of
-        SideA -> 'A'
-        SideB -> 'B'
-      tl = if side `elem` [gside, SideFinalA, SideFinalB, SideAny]
-        then case ggood of
-          Good -> "O"
-          Bad -> "X"
-        else
-          ""
+ghostName side = \case
+  NoGhost -> "."
+  Ghost gside ggood -> hd : tl where
+    hd = case gside of
+      SideA -> 'A'
+      SideB -> 'B'
+    tl = if side `elem` [gside, SideFinalA, SideFinalB, SideAny]
+      then case ggood of
+        Good -> "O"
+        Bad -> "X"
+      else
+        ""
 
-gameJSON :: Side -> Game -> Value
-gameJSON side (Game { gameBoard=board, gameLost=lost, gameCurr=curr }) =
-  object
-    [ "curr" .= show curr
-    , "board" .= map (map (ghostName side)) board
-    , "lost" .= map (ghostName SideAny) lost
-    ]
+instance ToJSON (Side, Game) where
+  toJSON (side, (Game { gameBoard=board, gameLost=lost, gameCurr=curr })) =
+    object
+      [ "curr" .= show curr
+      , "board" .= map (map (ghostName (if isFinalSide curr then SideAny else side))) board
+      , "lost" .= map (ghostName SideAny) lost
+      ]

@@ -28,36 +28,36 @@ newRoom = Room
   <*> newMVar Nothing
   <*> newMVar []
 
-roomJSON :: Side -> Room -> IO Value
-roomJSON side room = do
+roomJSON :: Side -> Text -> Room -> IO Value
+roomJSON side msg room = do
   game <- readMVar (roomGame room)
   mA <- readMVar (roomPa room)
   mB <- readMVar (roomPb room)
   return $ object
-    [ "game" .= gameJSON side game
+    [ "game" .= toJSON (side, game)
     , "playerA" .= maybe Null toJSON mA
     , "playerB" .= maybe Null toJSON mB
+    , "msg" .= msg
     ]
 
-sendRoomState :: WS.Connection -> Side -> Room -> IO ()
-sendRoomState conn side room = do
+sendRoomState :: WS.Connection -> Side -> Text -> Room -> IO ()
+sendRoomState conn side msg room = do
   putStrLn $ "sendRoomState"
-  json <- roomJSON side room
+  json <- roomJSON side msg room
   WS.sendTextData conn (encode json)
 
 broadcastRoomState :: Room -> IO ()
 broadcastRoomState room = do
 
-  let send side p = sendRoomState (playerConn p) side room
+  let
+    send side p = sendRoomState (playerConn p) side "" room
 
-  mA <- readMVar (roomPa room)
-  traverse (send SideA) mA
+    tr :: Traversable t => Side -> t Player -> IO (t ())
+    tr = traverse . send
 
-  mB <- readMVar (roomPb room)
-  traverse (send SideB) mB
-
-  lW <- readMVar (roomWatch room)
-  traverse (send SideOther) lW
+  tr SideA =<< readMVar (roomPa room)
+  tr SideB =<< readMVar (roomPb room)
+  tr SideOther =<< readMVar (roomWatch room)
 
   return ()
 

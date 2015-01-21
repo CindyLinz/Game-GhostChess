@@ -25,6 +25,11 @@
               text-align: center;
             }
 
+            #msg {
+              text-align: center;
+              color: red;
+            }
+
             .ghost {
                 width: 35px;
                 height: 35px;
@@ -49,6 +54,7 @@
         <br style=clear:both>
         <table align=center>
             <tr><td><div id=status></div>
+            <tr><td><div id=msg></div>
             <tr><td><center id=other_info></center>
             <tr><td><center id=other_capture></center>
             <tr><td><table id=board align=center cellspacing=3 border=1>
@@ -171,6 +177,13 @@
                     document.querySelector('#escape_button').style.display = 'none';
             };
 
+            var drawMsg = function(msg){
+                if( msg )
+                    document.querySelector('#msg').innerHTML = htmlEscape(msg);
+                else
+                    document.querySelector('#msg').innerHTML = '&nbsp;';
+            };
+
             var drawPlayerInfo = function(a, b){
                 var a_dom, b_dom;
                 switch( side ){
@@ -243,6 +256,7 @@
 
             var drawGameState = function(state){
                 drawStatus(state.game.curr);
+                drawMsg(state.msg);
                 drawPlayerInfo(state.playerA, state.playerB);
                 drawBoard(state.game.board);
                 drawLost(state.game.lost);
