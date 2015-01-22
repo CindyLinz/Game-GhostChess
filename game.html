@@ -22,12 +22,18 @@
             }
 
             #status {
-              text-align: center;
+                text-align: center;
             }
 
             #msg {
-              text-align: center;
-              color: red;
+                text-align: center;
+                color: red;
+            }
+
+            #room_list div {
+                border: 1px solid green;
+                float: left;
+                margin: 3px;
             }
 
             .ghost {
@@ -52,24 +58,33 @@
         <button id=set_nick_button style=float:right>換暱稱</button>
         <div id=hello style=float:right></div>
         <br style=clear:both>
-        <table align=center>
-            <tr><td><div id=status></div>
-            <tr><td><div id=msg></div>
-            <tr><td><center id=other_info></center>
-            <tr><td><center id=other_capture></center>
-            <tr><td><table id=board align=center cellspacing=3 border=1>
-                  <tr align=center><td class=corner><td><td><td><td><td class=corner>
-                  <tr align=center><td><td><td><td><td><td>
-                  <tr align=center><td><td><td><td><td><td>
-                  <tr align=center><td><td><td><td><td><td>
-                  <tr align=center><td><td><td><td><td><td>
-                  <tr align=center><td class=corner><td><td><td><td><td class=corner>
-              </table>
-            <tr><td><center><button id=ready_button>準備好了</button></center>
-            <tr><td><center><button id=escape_button>好幽靈達陣</button></center>
-            <tr><td><center id=self_capture></center>
-            <tr><td><center id=self_info></center>
-        </table>
+        <div id=lobby>
+            <h3 align=center>選擇遊戲房間 (參與/觀戰)</h3>
+            <div id=room_list></div>
+            <br style=clear:both>
+            <button id=new_room_button>開新遊戲房</button>
+        </div>
+        <div id=game>
+            <button id=leave_room_button style=float:right>離開房間</button>
+            <table align=center>
+                <tr><td><div id=status></div>
+                <tr><td><div id=msg></div>
+                <tr><td><center id=other_info></center>
+                <tr><td><center id=other_capture></center>
+                <tr><td><table id=board align=center cellspacing=3 border=1>
+                      <tr align=center><td class=corner><td><td><td><td><td class=corner>
+                      <tr align=center><td><td><td><td><td><td>
+                      <tr align=center><td><td><td><td><td><td>
+                      <tr align=center><td><td><td><td><td><td>
+                      <tr align=center><td><td><td><td><td><td>
+                      <tr align=center><td class=corner><td><td><td><td><td class=corner>
+                  </table>
+                <tr><td><center><button id=ready_button>準備好了</button></center>
+                <tr><td><center><button id=escape_button>好幽靈達陣</button></center>
+                <tr><td><center id=self_capture></center>
+                <tr><td><center id=self_info></center>
+            </table>
+        </div>
         <script>(function(){
             var setupIdent = function(){
                 var identKey = 'GhostChessIdent';
@@ -93,6 +108,14 @@
                 if( !nick )
                     nick = setNick();
                 return nick;
+            };
+
+            var roomKey = 'GhostChestRoom';
+            var getRoomId = function(){
+                return window.localStorage.getItem(roomKey);
+            };
+            var setRoomId = function(roomId){
+                window.localStorage.setItem(roomKey, roomId);
             };
 
             var side;
@@ -314,6 +337,10 @@
                 setNick();
                 window.location.reload();
             };
+            document.querySelector('#leave_room_button').onclick = function(){
+                setRoomId('');
+                window.location.reload();
+            };
 
             var ws = new WebSocket("ws://127.0.0.1:3001/");
             window.ws = ws;
@@ -323,18 +350,84 @@
                 ws.send(ident);
                 ws.send(nick);
                 ws.onmessage = function(ev){
-                    console.log("recv side: " + ev.data);
-                    side = ev.data;
-                    ws.onmessage = function(ev){
-                        console.log("recv game state: " + ev.data);
-                        drawGameState(JSON.parse(ev.data));
+                    console.log("recv room_list: " + ev.data);
+
+                    var roomId = getRoomId();
+                    var i;
+                    var roomList = JSON.parse(ev.data);
+
+                    var enterRoom = function(){
+                        document.querySelector('#lobby').style.display = 'none';
+                        document.querySelector('#game').style.display = '';
+                        ws.onmessage = function(ev){
+                            console.log("recv room_id: " + ev.data);
+                            setRoomId(ev.data);
+
+                            ws.onmessage = function(ev){
+                                console.log("recv side: " + ev.data);
+                                side = ev.data;
+                                ws.onmessage = function(ev){
+                                    console.log("recv game state: " + ev.data);
+                                    drawGameState(JSON.parse(ev.data));
+                                };
+                                registerSlotClicker(ws);
+                            };
+                        };
                     };
-                    registerSlotClicker(ws);
+
+                    for(i=0; i<roomList.length; ++i)
+                        if( roomList[i].id===roomId ){
+                            ws.send(JSON.stringify({
+                                cmd: "join",
+                                id: roomId
+                            }));
+                            enterRoom();
+                            break;
+                        }
+                    if( i>=roomList.length ){
+                        document.querySelector('#lobby').style.display = '';
+                        document.querySelector('#game').style.display = 'none';
+                        document.querySelector('#new_room_button').onclick = function(){
+                            ws.send(JSON.stringify({
+                                cmd: "new"
+                            }));
+                            enterRoom();
+                        };
+
+                        var roomListHtml = '';
+                        for(i=0; i<roomList.length; ++i){
+                            var j;
+                            roomListHtml += '<div><a data-id=' + roomList[i].id + ' href=#>';
+                            for(j=0; j<roomList[i].player.length; ++j)
+                                if( roomList[i].player[j] )
+                                    roomListHtml += htmlEscape(roomList[i].player[j].nick) + '(' + roomList[i].player[j].addr + ')<br>';
+                                else
+                                    roomListHtml += '等待加入<br>';
+                            roomListHtml += '</a></div>';
+                        }
+                        document.querySelector('#room_list').innerHTML = roomListHtml;
+                        var entry_links;
+                        var entry_link_click = function(){
+                            ws.send(JSON.stringify({
+                                cmd: "join",
+                                id: this.dataset.id
+                            }))
+                            enterRoom();
+                        };
+                        entry_links = document.querySelectorAll('#room_list a');
+                        for(i=0; i<entry_links.length; ++i)
+                            entry_links[i].onclick = entry_link_click;
+                    }
                 };
 
             };
             ws.onclose = function(ev){
                 console.log("closed");
+            };
+            var ori_ws_send = ws.send;
+            ws.send = function(data){
+                console.log("send: " + data);
+                ori_ws_send.call(ws, data);
             };
         })()</script>
     </body>

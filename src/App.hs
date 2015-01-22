@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, TemplateHaskell, MultiParamTypeClasses, OverloadedStrings, NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies, TemplateHaskell, MultiParamTypeClasses, OverloadedStrings, NamedFieldPuns, LambdaCase, TupleSections #-}
 module App where
 
 import qualified Network.WebSockets as WS
@@ -12,8 +12,9 @@ import Control.Concurrent.MVar
 import Data.Aeson
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.HashTable.IO as H
 import qualified Data.Map as M
+
+import System.Random
 
 import Room
 import Player
@@ -22,19 +23,14 @@ import Game
 import Cmd
 import WebSocketsData
 
-type HashTable k v = H.CuckooHashTable k v
-
 data GhostChessApp = GhostChessApp
---  { appRooms :: MVar (HashTable Text Room)
---  }
-  { appRoom :: Room
+  { appRooms :: MVar [(Text, Room)]
   }
 
---initApp = GhostChessApp <$> (H.new >>= newMVar)
-initApp = GhostChessApp <$> newRoom
+initApp = GhostChessApp <$> newMVar []
 
 socketApp :: GhostChessApp -> S.SockAddr -> WS.PendingConnection -> IO ()
-socketApp (GhostChessApp {appRoom}) addr pConn = do
+socketApp (GhostChessApp {appRooms}) addr pConn = do
   conn <- WS.acceptRequest pConn
   WS.forkPingThread conn 30
 
@@ -60,43 +56,59 @@ socketApp (GhostChessApp {appRoom}) addr pConn = do
       , playerAddr = addr
       }
 
-  side <- joinRoom player appRoom
-  clientLog $ "side=" ++ show side
-  WS.sendTextData conn $ show side
+  -- 輸出目前房間
+  roomList <- readMVar appRooms
+  roomListJSON <- liftM toJSON $ forM roomList $ \(roomId, room) -> do
+    players <- roomPlayerJSON room
+    return $ object
+      [ "id" .= roomId
+      , "player" .= players
+      ]
+  WS.sendTextData conn (encode roomListJSON)
 
-  broadcastRoomState appRoom
+  -- 選房間
+  mRoomEntity <- WS.receiveData conn >>= return . maybe CmdUnknownRoom id . decode >>= \case
+    CmdNewRoom -> modifyMVar appRooms $ \rooms -> do
+      roomId <- return . T.pack . show =<< randomRIO (100000000, maxBound :: Int)
+      room <- newRoom
+      return ((roomId, room) : rooms, Just (roomId, room))
+    CmdJoinRoom roomId -> modifyMVar appRooms $ \rooms -> do
+      return (rooms, (roomId,) <$> lookup roomId rooms)
+    CmdUnknownRoom -> do
+      return Nothing
 
-  forever $ do
-    cmd <- WS.receiveData conn >>= return . maybe CmdUnknown id . decode
-    clientLog $ "got command: " ++ show cmd
+  case mRoomEntity of
+    Nothing -> return ()
+    Just (roomId, room) -> do
+      clientLog $ "roomId=" ++ T.unpack roomId
+      WS.sendTextData conn roomId
 
-    let
-      playWith :: (Side -> Game -> Either Text Game) -> IO (Maybe Text)
-      playWith act = modifyMVar (roomGame appRoom) $ \game -> do
-        case act side game of
-          Left msg -> do
-            clientLog ("error: " ++ T.unpack msg)
-            return (game, Just msg)
-          Right game' -> do
-            return (markMaybeFinalGame game', Nothing)
+      side <- joinRoom player room
+      clientLog $ "side=" ++ show side
+      WS.sendTextData conn $ show side
 
-    mError <- case cmd of
-      CmdReady -> playWith playerReady
-      CmdMove r1 c1 r2 c2 -> playWith $ moveGhost (r1, c1) (r2, c2)
-      CmdEscape -> playWith escapeGhost
-      _ -> return (Just "怪指令")
+      broadcastRoomState room
 
-    case mError of
-      Just err -> sendRoomState conn side err appRoom
-      Nothing -> broadcastRoomState appRoom
+      forever $ do
+        cmd <- WS.receiveData conn >>= return . maybe CmdUnknown id . decode
+        clientLog $ "got command: " ++ show cmd
 
-    return ()
+        let
+          playWith :: (Side -> Game -> Either Text Game) -> IO (Maybe Text)
+          playWith act = modifyMVar (roomGame room) $ \game -> do
+            case act side game of
+              Left msg -> do
+                clientLog ("error: " ++ T.unpack msg)
+                return (game, Just msg)
+              Right game' -> do
+                return (markMaybeFinalGame game', Nothing)
 
---  -- 輸出目前房間
---  roomList <- readMVar appRooms >>= H.toList >>= mapM (\(roomId, room) -> (,) roomId <$> roomSpace room)
---  WS.sendTextData conn (encode $ M.fromList roomList)
+        mError <- case cmd of
+          CmdReady -> playWith playerReady
+          CmdMove r1 c1 r2 c2 -> playWith $ moveGhost (r1, c1) (r2, c2)
+          CmdEscape -> playWith escapeGhost
+          _ -> return (Just "怪指令")
 
---  -- 選房
---  roomid <- WS.receiveData conn :: IO Text
-
-  return ()
+        case mError of
+          Just err -> sendRoomState conn side err room
+          Nothing -> broadcastRoomState room

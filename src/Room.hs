@@ -87,10 +87,12 @@ joinRoom player room = do
 
   return resA
 
---roomSpace :: Room -> IO Int
---roomSpace (Room {roomPa, roomPb}) = do
---  pa <- readMVar roomPa
---  pb <- readMVar roomPb
---
---  let space = maybe 1 (const 0)
---  return $ space pa + space pb
+roomPlayerJSON :: Room -> IO Value
+roomPlayerJSON (Room {roomPa, roomPb}) = do
+  pa <- readMVar roomPa
+  pb <- readMVar roomPb
+
+  return $ toJSON
+    [ toJSON pa
+    , toJSON pb
+    ]
