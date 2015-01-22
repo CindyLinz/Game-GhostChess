@@ -12,10 +12,12 @@ data Player = Player
   , playerAddr :: S.SockAddr
   , playerIdent :: Text
   , playerNick :: Text
+  , playerOnline :: Int
   }
 
 instance ToJSON Player where
   toJSON player = object
     [ "nick" .= playerNick player
     , "addr" .= show (playerAddr player)
+    , "online" .= playerOnline player
     ]

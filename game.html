@@ -399,8 +399,12 @@
                             var j;
                             roomListHtml += '<div><a data-id=' + roomList[i].id + ' href=#>';
                             for(j=0; j<roomList[i].player.length; ++j)
-                                if( roomList[i].player[j] )
-                                    roomListHtml += htmlEscape(roomList[i].player[j].nick) + '(' + roomList[i].player[j].addr + ')<br>';
+                                if( roomList[i].player[j] ){
+                                    roomListHtml += htmlEscape(roomList[i].player[j].nick) + '(' + roomList[i].player[j].addr + ')';
+                                    if( roomList[i].player[j].online<=0 )
+                                        roomListHtml += ' (暫離)';
+                                    roomListHtml += '<br>';
+                                }
                                 else
                                     roomListHtml += '等待加入<br>';
                             roomListHtml += '</a></div>';

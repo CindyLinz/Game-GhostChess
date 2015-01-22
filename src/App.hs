@@ -8,6 +8,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Concurrent
 import Control.Concurrent.MVar
+import Control.Exception
 
 import Data.Aeson
 import Data.Text (Text)
@@ -27,7 +28,19 @@ data GhostChessApp = GhostChessApp
   { appRooms :: MVar [(Text, Room)]
   }
 
-initApp = GhostChessApp <$> newMVar []
+initApp = do
+  app <- GhostChessApp <$> newMVar []
+  forkIO $ forever $ do
+    threadDelay 10000000
+    modifyMVar_ (appRooms app) $ \rooms -> do
+      unless (null rooms) $ do
+        putStrLn $ "check rooms close: "
+        forM_ rooms $ \(roomId, room) -> do
+          mEmpty <- readMVar (roomEmpty room)
+          putStrLn $ "  " ++ show roomId ++ ": " ++ show mEmpty
+      flip filterM rooms $ \(_, room) ->
+        fmap not (needCloseRoom room)
+  return app
 
 socketApp :: GhostChessApp -> S.SockAddr -> WS.PendingConnection -> IO ()
 socketApp (GhostChessApp {appRooms}) addr pConn = do
@@ -54,6 +67,7 @@ socketApp (GhostChessApp {appRooms}) addr pConn = do
       , playerIdent = ident
       , playerNick = nick
       , playerAddr = addr
+      , playerOnline = undefined
       }
 
   -- 輸出目前房間
@@ -87,28 +101,35 @@ socketApp (GhostChessApp {appRooms}) addr pConn = do
       clientLog $ "side=" ++ show side
       WS.sendTextData conn $ show side
 
+      checkRoomOnline room
       broadcastRoomState room
 
-      forever $ do
-        cmd <- WS.receiveData conn >>= return . maybe CmdUnknown id . decode
-        clientLog $ "got command: " ++ show cmd
+      let
+        whenDisconnect = do
+          leaveRoom player room
+          checkRoomOnline room
 
-        let
-          playWith :: (Side -> Game -> Either Text Game) -> IO (Maybe Text)
-          playWith act = modifyMVar (roomGame room) $ \game -> do
-            case act side game of
-              Left msg -> do
-                clientLog ("error: " ++ T.unpack msg)
-                return (game, Just msg)
-              Right game' -> do
-                return (markMaybeFinalGame game', Nothing)
+      flip finally whenDisconnect $ do
+        forever $ do
+          cmd <- WS.receiveData conn >>= return . maybe CmdUnknown id . decode
+          clientLog $ "got command: " ++ show cmd
 
-        mError <- case cmd of
-          CmdReady -> playWith playerReady
-          CmdMove r1 c1 r2 c2 -> playWith $ moveGhost (r1, c1) (r2, c2)
-          CmdEscape -> playWith escapeGhost
-          _ -> return (Just "怪指令")
+          let
+            playWith :: (Side -> Game -> Either Text Game) -> IO (Maybe Text)
+            playWith act = modifyMVar (roomGame room) $ \game -> do
+              case act side game of
+                Left msg -> do
+                  clientLog ("error: " ++ T.unpack msg)
+                  return (game, Just msg)
+                Right game' -> do
+                  return (markMaybeFinalGame game', Nothing)
 
-        case mError of
-          Just err -> sendRoomState conn side err room
-          Nothing -> broadcastRoomState room
+          mError <- case cmd of
+            CmdReady -> playWith playerReady
+            CmdMove r1 c1 r2 c2 -> playWith $ moveGhost (r1, c1) (r2, c2)
+            CmdEscape -> playWith escapeGhost
+            _ -> return (Just "怪指令")
+
+          case mError of
+            Just err -> sendRoomState conn side err room
+            Nothing -> broadcastRoomState room
