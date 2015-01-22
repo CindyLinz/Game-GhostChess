@@ -125,7 +125,11 @@ socketApp (GhostChessApp {appRooms}) addr pConn = do
                   return (markMaybeFinalGame game', Nothing)
 
           mError <- case cmd of
-            CmdReady -> playWith playerReady
+            CmdReady -> do
+              startSide <- randomRIO (0,1 :: Int) >>= \case
+                0 -> return SideA
+                1 -> return SideB
+              playWith (playerReady startSide)
             CmdMove r1 c1 r2 c2 -> playWith $ moveGhost (r1, c1) (r2, c2)
             CmdEscape -> playWith escapeGhost
             _ -> return (Just "怪指令")

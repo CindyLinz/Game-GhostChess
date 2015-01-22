@@ -97,12 +97,12 @@ markMaybeFinalGame game = case isFinalGame game of
   WinA -> game { gameCurr=SideFinalA }
   WinB -> game { gameCurr=SideFinalB }
 
-playerReady :: Side -> Game -> Either Text Game
-playerReady side (game @ Game {gameCurr=curr}) = case curr of
+playerReady :: Side -> Side -> Game -> Either Text Game
+playerReady startSide side (game @ Game {gameCurr=curr}) = case curr of
   SideBegin | side==SideA -> Right $ game {gameCurr = SideBeginB}
             | side==SideB -> Right $ game {gameCurr = SideBeginA}
-  SideBeginA | side==SideA -> Right $ game {gameCurr = SideA}
-  SideBeginB | side==SideB -> Right $ game {gameCurr = SideA}
+  SideBeginA | side==SideA -> Right $ game {gameCurr = startSide}
+  SideBeginB | side==SideB -> Right $ game {gameCurr = startSide}
   _ -> Left "不是輪到你"
 
 moveGhost :: (Int, Int) -> (Int, Int) -> Side -> Game -> Either Text Game
