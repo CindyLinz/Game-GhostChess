@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase, NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings, LambdaCase, NamedFieldPuns, ScopedTypeVariables #-}
 module Room where
 
 import qualified Network.WebSockets as WS
@@ -7,6 +7,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Concurrent.MVar
 import Control.Monad.Writer
+import Control.Exception
 
 import Data.Aeson
 import Data.Text (Text)
@@ -50,7 +51,7 @@ sendRoomState :: WS.Connection -> Side -> Text -> Room -> IO ()
 sendRoomState conn side msg room = do
   putStrLn $ "sendRoomState"
   json <- roomJSON side msg room
-  WS.sendTextData conn (encode json)
+  catch (WS.sendTextData conn (encode json)) (\(_ :: IOException) -> return ())
 
 broadcastRoomState :: Room -> IO ()
 broadcastRoomState room = do
