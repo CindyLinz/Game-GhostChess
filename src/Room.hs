@@ -88,7 +88,7 @@ joinRoom player room = do
                   go [] = [player {playerOnline = 1}]
                   go (w:ws) =
                     if playerIdent w == ident
-                      then (w {playerOnline = playerOnline w + 1}) : ws
+                      then (player {playerOnline = playerOnline w + 1}) : ws
                       else w : go ws
                 return $ go ws
               return (Just b, SideOther)
