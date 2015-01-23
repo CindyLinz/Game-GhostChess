@@ -219,12 +219,18 @@
                         b_dom = document.querySelector('#self_info');
                         break;
                 }
-                if( a )
+                if( a ){
                     a_dom.innerHTML = '來自 ' + a.addr + ' 的 ' + htmlEscape(a.nick);
+                    if( a.online<=0 )
+                        a_dom.innerHTML += ' (暫離)';
+                }
                 else
                     a_dom.innerHTML = '等待連線..';
-                if( b )
+                if( b ){
                     b_dom.innerHTML = '來自 ' + b.addr + ' 的 ' + htmlEscape(b.nick);
+                    if( b.online<=0 )
+                        b_dom.innerHTML += ' (暫離)';
+                }
                 else
                     b_dom.innerHTML = '等待連線..';
             };
