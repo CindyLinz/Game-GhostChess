@@ -1,0 +1,444 @@
+<!DOCTYPE HTML>
+<html>
+    <head>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8">
+        <title>Game</title>
+        <style>
+            table#board td {
+                width: 50px;
+                height: 50px;
+            }
+
+            #board .corner {
+                background-color: #ccc;
+            }
+
+            #board td {
+                cursor: pointer;
+            }
+
+            #board td.holding {
+                background-color: pink;
+            }
+
+            #status {
+                text-align: center;
+            }
+
+            #msg {
+                text-align: center;
+                color: red;
+            }
+
+            #room_list div {
+                border: 1px solid green;
+                float: left;
+                margin: 3px;
+            }
+
+            .ghost {
+                width: 35px;
+                height: 35px;
+                font-size: 25px;
+                border-radius: 20px;
+                margin: 7px;
+                text-align: center;
+                float: left;
+            }
+
+            .blue { color: #9df }
+            .red { color: #f99 }
+            .gray { color: #ddd }
+
+            .a_ghost { border: 1px solid #ff0 }
+            .b_ghost { border: 1px solid #0f0 }
+        </style>
+    </head>
+    <body>
+        <button id=set_nick_button style=float:right>換暱稱</button>
+        <div id=hello style=float:right></div>
+        <br style=clear:both>
+        <div id=lobby style=display:none>
+            <h3 align=center>選擇遊戲房間 (參與/觀戰)</h3>
+            <div id=room_list></div>
+            <br style=clear:both>
+            <button id=new_room_button>開新遊戲房</button>
+        </div>
+        <div id=game style=display:none>
+            <button id=leave_room_button style=float:right>離開房間</button>
+            <table align=center>
+                <tr><td><div id=status></div>
+                <tr><td><div id=msg></div>
+                <tr><td><center id=other_info></center>
+                <tr><td><center id=other_capture></center>
+                <tr><td><table id=board align=center cellspacing=3 border=1>
+                      <tr align=center><td class=corner><td><td><td><td><td class=corner>
+                      <tr align=center><td><td><td><td><td><td>
+                      <tr align=center><td><td><td><td><td><td>
+                      <tr align=center><td><td><td><td><td><td>
+                      <tr align=center><td><td><td><td><td><td>
+                      <tr align=center><td class=corner><td><td><td><td><td class=corner>
+                  </table>
+                <tr><td><center><button id=ready_button>準備好了</button></center>
+                <tr><td><center><button id=escape_button>好幽靈達陣</button></center>
+                <tr><td><center id=self_capture></center>
+                <tr><td><center id=self_info></center>
+            </table>
+        </div>
+        <script>(function(){
+            var setupIdent = function(){
+                var identKey = 'GhostChessIdent';
+                var ident = window.localStorage.getItem(identKey);
+                if( !ident ){
+                    ident = '' + Math.random() + Math.random();
+                    window.localStorage.setItem(identKey, ident);
+                }
+                return ident;
+            };
+
+            var nickKey = 'GhostChessNick';
+            var setNick = function(){
+                var nick = prompt("輸入暱稱");
+                window.localStorage.setItem(nickKey, nick);
+                return nick;
+            };
+
+            var getNick = function(){
+                var nick = window.localStorage.getItem(nickKey);
+                if( !nick )
+                    nick = setNick();
+                return nick;
+            };
+
+            var roomKey = 'GhostChestRoom';
+            var getRoomId = function(){
+                return window.localStorage.getItem(roomKey);
+            };
+            var setRoomId = function(roomId){
+                window.localStorage.setItem(roomKey, roomId);
+            };
+
+            var side;
+
+            var htmlEscape = function(str){
+                return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            };
+
+            var drawStatus = function(curr){
+                var status_msg = '';
+                var ready_button_show = false;
+                var esc_show = false;
+                switch( curr ){
+                    case 'SideBegin':
+                        status_msg = '等待雙方擺放幽靈';
+                        if( side==='SideA' || side==='SideB' )
+                            ready_button_show = true;
+                        break;
+                    case 'SideBeginA':
+                        if( side==='SideA' ){
+                            status_msg = '等你擺放幽靈';
+                            ready_button_show = true;
+                        }
+                        else if( side==='SideB' )
+                            status_msg = '等對方擺放幽靈';
+                        else
+                            status_msg = '等上方擺放幽靈';
+                        break;
+                    case 'SideBeginB':
+                        if( side==='SideA' )
+                            status_msg = '等對方擺放幽靈';
+                        else if( side==='SideB' ){
+                            status_msg = '等你擺放幽靈';
+                            ready_button_show = true;
+                        }
+                        else
+                            status_msg = '等下方擺放幽靈';
+                        break;
+                    case 'SideA':
+                        esc_show = true;
+                        if( side==='SideA' )
+                            status_msg = '輪到你移動';
+                        else if( side==='SideB' )
+                            status_msg = '輪到對方移動';
+                        else
+                            status_msg = '等上方移動';
+                        break;
+                    case 'SideB':
+                        esc_show = true;
+                        if( side==='SideA' )
+                            status_msg = '輪到對方移動';
+                        else if( side==='SideB' )
+                            status_msg = '輪到你移動';
+                        else
+                            status_msg = '等下方移動';
+                        break;
+                    case 'SideFinalA':
+                        if( side==='SideA' )
+                            status_msg = '遊戲結束, 你贏';
+                        else if( side==='SideB' )
+                            status_msg = '遊戲結束, 你輸';
+                        else
+                            status_msg = '遊戲結束, 上方贏';
+                        break;
+                    case 'SideFinalB':
+                        if( side==='SideA' )
+                            status_msg = '遊戲結束, 你輸';
+                        else if( side==='SideB' )
+                            status_msg = '遊戲結束, 你贏';
+                        else
+                            status_msg = '遊戲結束, 下方贏';
+                        break;
+                }
+                document.querySelector('#status').innerHTML = status_msg;
+                if( ready_button_show )
+                    document.querySelector('#ready_button').style.display = '';
+                else
+                    document.querySelector('#ready_button').style.display = 'none';
+                if( esc_show )
+                    document.querySelector('#escape_button').style.display = '';
+                else
+                    document.querySelector('#escape_button').style.display = 'none';
+            };
+
+            var drawMsg = function(msg){
+                if( msg )
+                    document.querySelector('#msg').innerHTML = htmlEscape(msg);
+                else
+                    document.querySelector('#msg').innerHTML = '&nbsp;';
+            };
+
+            var drawPlayerInfo = function(a, b){
+                var a_dom, b_dom;
+                switch( side ){
+                    case 'SideA':
+                        a_dom = document.querySelector('#self_info');
+                        b_dom = document.querySelector('#other_info');
+                        break;
+                    default:
+                        a_dom = document.querySelector('#other_info');
+                        b_dom = document.querySelector('#self_info');
+                        break;
+                }
+                if( a ){
+                    a_dom.innerHTML = '來自 ' + a.addr + ' 的 ' + htmlEscape(a.nick);
+                    if( a.online<=0 )
+                        a_dom.innerHTML += ' (暫離)';
+                }
+                else
+                    a_dom.innerHTML = '等待連線..';
+                if( b ){
+                    b_dom.innerHTML = '來自 ' + b.addr + ' 的 ' + htmlEscape(b.nick);
+                    if( b.online<=0 )
+                        b_dom.innerHTML += ' (暫離)';
+                }
+                else
+                    b_dom.innerHTML = '等待連線..';
+            };
+
+            var ghostHtml = function(ghost){
+                var klass = ['ghost'];
+                if( ghost[0]==='A' )
+                    klass.push('a_ghost');
+                else if( ghost[0]==='B' )
+                    klass.push('b_ghost');
+                else
+                    return '';
+                switch( ghost[1] ){
+                    case 'O': klass.push('red'); break;
+                    case 'X': klass.push('blue'); break;
+                    default: klass.push('gray'); break;
+                }
+                return '<div class="' + klass.join(' ') + '">&#x265F;</div>';
+            };
+
+            var drawBoard = function(board){
+                var slots = document.querySelectorAll('#board td');
+                var i, j, k, t;
+                if( side==='SideA' ){
+                    t=board[0]; board[0]=board[5]; board[5]=t;
+                    t=board[1]; board[1]=board[4]; board[4]=t;
+                    t=board[2]; board[2]=board[3]; board[3]=t;
+                }
+                for(i=0, k=0; i<6; ++i)
+                    for(j=0; j<6; ++j, ++k)
+                        slots[k].innerHTML = ghostHtml(board[i][j]);
+            };
+
+            var drawLost = function(lost){
+                var i;
+                var a_lost = '', b_lost = '';
+                for(i=0; i<lost.length; ++i){
+                    if( lost[i][0]==='A' )
+                        a_lost += ghostHtml(lost[i]);
+                    else
+                        b_lost += ghostHtml(lost[i]);
+                }
+                if( side==='SideA' ){
+                    document.querySelector('#self_capture').innerHTML = b_lost;
+                    document.querySelector('#other_capture').innerHTML = a_lost;
+                }
+                else{
+                    document.querySelector('#self_capture').innerHTML = a_lost;
+                    document.querySelector('#other_capture').innerHTML = b_lost;
+                }
+            };
+
+            var drawGameState = function(state){
+                drawStatus(state.game.curr);
+                drawMsg(state.msg);
+                drawPlayerInfo(state.playerA, state.playerB);
+                drawBoard(state.game.board);
+                drawLost(state.game.lost);
+            };
+
+            var registerSlotClicker = function(ws){
+                var holding = null;
+                var i;
+                var slot_click_gen = function(r, c){
+                    var pos;
+                    if( side==='SideA' )
+                        pos = {r: 5-r, c: c};
+                    else
+                        pos = {r: r, c: c};
+                    return function(){
+                        if( holding ){
+                            ws.send(JSON.stringify({
+                                cmd: "move",
+                                r1: holding.r,
+                                c1: holding.c,
+                                r2: pos.r,
+                                c2: pos.c
+                            }));
+                            holding.this.classList.remove('holding');
+                            delete holding.this;
+                            holding = null;
+                        }
+                        else{
+                            pos.this = this;
+                            holding = pos;
+                            this.classList.add('holding');
+                        }
+                    };
+                };
+                var slots = document.querySelectorAll('#board td');
+                for(i=0; i<slots.length; ++i)
+                    slots[i].onclick = slot_click_gen(parseInt(i/6), i%6);
+                document.querySelector('#ready_button').onclick = function(){
+                    ws.send(JSON.stringify({
+                        cmd: 'ready'
+                    }));
+                };
+                document.querySelector('#escape_button').onclick = function(){
+                    ws.send(JSON.stringify({
+                        cmd: 'esc'
+                    }));
+                };
+            };
+
+            var ident = setupIdent();
+            var nick = getNick();
+
+            document.querySelector('#hello').innerHTML = "嗨~ " + htmlEscape(nick);
+            document.querySelector('#set_nick_button').onclick = function(){
+                setNick();
+                window.location.reload();
+            };
+            document.querySelector('#leave_room_button').onclick = function(){
+                setRoomId('');
+                window.location.reload();
+            };
+
+            var ws = new WebSocket("ws://106.186.112.194:50373/");
+            window.ws = ws;
+            ws.onopen = function(ev){
+                console.log("opened");
+
+                ws.send(ident);
+                ws.send(nick);
+                ws.onmessage = function(ev){
+                    console.log("recv room_list: " + ev.data);
+
+                    var roomId = getRoomId();
+                    var i;
+                    var roomList = JSON.parse(ev.data);
+
+                    var enterRoom = function(){
+                        document.querySelector('#lobby').style.display = 'none';
+                        document.querySelector('#game').style.display = '';
+                        ws.onmessage = function(ev){
+                            console.log("recv room_id: " + ev.data);
+                            setRoomId(ev.data);
+
+                            ws.onmessage = function(ev){
+                                console.log("recv side: " + ev.data);
+                                side = ev.data;
+                                ws.onmessage = function(ev){
+                                    console.log("recv game state: " + ev.data);
+                                    drawGameState(JSON.parse(ev.data));
+                                };
+                                registerSlotClicker(ws);
+                            };
+                        };
+                    };
+
+                    for(i=0; i<roomList.length; ++i)
+                        if( roomList[i].id===roomId ){
+                            ws.send(JSON.stringify({
+                                cmd: "join",
+                                id: roomId
+                            }));
+                            enterRoom();
+                            break;
+                        }
+                    if( i>=roomList.length ){
+                        document.querySelector('#lobby').style.display = '';
+                        document.querySelector('#game').style.display = 'none';
+                        document.querySelector('#new_room_button').onclick = function(){
+                            ws.send(JSON.stringify({
+                                cmd: "new"
+                            }));
+                            enterRoom();
+                        };
+
+                        var roomListHtml = '';
+                        for(i=0; i<roomList.length; ++i){
+                            var j;
+                            roomListHtml += '<div><a data-id=' + roomList[i].id + ' href=#>';
+                            for(j=0; j<roomList[i].player.length; ++j)
+                                if( roomList[i].player[j] ){
+                                    roomListHtml += htmlEscape(roomList[i].player[j].nick) + '(' + roomList[i].player[j].addr + ')';
+                                    if( roomList[i].player[j].online<=0 )
+                                        roomListHtml += ' (暫離)';
+                                    roomListHtml += '<br>';
+                                }
+                                else
+                                    roomListHtml += '等待加入<br>';
+                            roomListHtml += '</a></div>';
+                        }
+                        document.querySelector('#room_list').innerHTML = roomListHtml;
+                        var entry_links;
+                        var entry_link_click = function(){
+                            ws.send(JSON.stringify({
+                                cmd: "join",
+                                id: this.dataset.id
+                            }))
+                            enterRoom();
+                        };
+                        entry_links = document.querySelectorAll('#room_list a');
+                        for(i=0; i<entry_links.length; ++i)
+                            entry_links[i].onclick = entry_link_click;
+                    }
+                };
+
+            };
+            ws.onclose = function(ev){
+                console.log("closed");
+            };
+            var ori_ws_send = ws.send;
+            ws.send = function(data){
+                console.log("send: " + data);
+                ori_ws_send.call(ws, data);
+            };
+        })()</script>
+    </body>
+</html>
