@@ -14,6 +14,7 @@ import Data.Aeson
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Map as M
+import Data.Time
 
 import System.Random
 
@@ -49,7 +50,9 @@ socketApp (GhostChessApp {appRooms}) addr pConn = do
 
   let
     clientLog :: String -> IO ()
-    clientLog msg = putStrLn $ "socket(" ++ show addr ++ ") " ++ msg
+    clientLog msg = do
+      now <- getCurrentTime
+      putStrLn $ show now ++ " socket(" ++ show addr ++ ") " ++ msg
 
   clientLog "connected"
 
