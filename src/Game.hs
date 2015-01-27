@@ -162,12 +162,16 @@ moveGhost (r0,c0) (r1,c1) side (game @ Game {gameCurr=curr, gameBoard=board, gam
     return $ Game { gameBoard=board', gameCurr=curr', gameLost=lost' }
 
 escapeGhost :: Side -> Game -> Either Text Game
-escapeGhost side (game @ Game { gameBoard=board }) = case side of
-  SideA | Ghost SideA Good <- board !! 5 !! 0 -> dropGhost 5 0
-        | Ghost SideA Good <- board !! 5 !! 5 -> dropGhost 5 5
-  SideB | Ghost SideB Good <- board !! 0 !! 0 -> dropGhost 0 0
-        | Ghost SideB Good <- board !! 0 !! 5 -> dropGhost 0 5
-  _ -> throwError "沒有可以脫離的幽靈"
+escapeGhost side (game @ Game { gameCurr=curr, gameBoard=board }) =
+  if curr==side
+    then case side of
+      SideA | Ghost SideA Good <- board !! 5 !! 0 -> dropGhost 5 0
+            | Ghost SideA Good <- board !! 5 !! 5 -> dropGhost 5 5
+      SideB | Ghost SideB Good <- board !! 0 !! 0 -> dropGhost 0 0
+            | Ghost SideB Good <- board !! 0 !! 5 -> dropGhost 0 5
+      _ -> throwError "沒有可以脫離的幽靈"
+    else
+      throwError "不是輪到你"
   where
 
   dropGhost r c = return $ game { gameBoard = r !<- c !<- const NoGhost $ board }
