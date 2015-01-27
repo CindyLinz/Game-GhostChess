@@ -23,6 +23,12 @@ main = do
     putStrLn $ "websocket server ready on port " ++ show port
     forever $ do
       (conn, addr) <- S.accept sock
-      forkIO $ flip finally (S.sClose conn) $ do
+      let
+        cleanUp = do
+          putStrLn $ "socket from " ++ show addr ++ " closed"
+          S.sClose conn
+        gotException e = do
+          putStrLn $ "socket from " ++ show addr ++ " got exception: " ++ show (e :: SomeException)
+      forkIO $ flip finally cleanUp $ handle gotException $ do
         pending <- WS.makePendingConnection conn WS.defaultConnectionOptions
         socketApp app addr pending
