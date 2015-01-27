@@ -84,6 +84,11 @@
                 <tr><td><center><button id=escape_button>好幽靈達陣</button></center>
                 <tr><td><center id=self_capture></center>
                 <tr><td><center id=self_info></center>
+                <tr><td>
+                    <table align=center cellspacing=0 border=1>
+                        <tr><td>好幽靈<td>壞幽靈
+                        <tr><td><span class='ghost blue'>&#x265F;</span><td><span class='ghost red'>&#x265F;</span>
+                    </table>
             </table>
         </div>
         <script>(function(){
@@ -245,8 +250,8 @@
                 else
                     return '';
                 switch( ghost[1] ){
-                    case 'O': klass.push('red'); break;
-                    case 'X': klass.push('blue'); break;
+                    case 'O': klass.push('blue'); break;
+                    case 'X': klass.push('red'); break;
                     default: klass.push('gray'); break;
                 }
                 return '<div class="' + klass.join(' ') + '">&#x265F;</div>';
